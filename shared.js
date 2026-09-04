@@ -508,14 +508,34 @@ function layoutRevealStackOn(wrap, chosenEl, midEl){
    切在可視範圍外——補測過 9 個情緒，捲動範圍其實一直都夠，只是捲軸停錯地方。改成：
    畫面上有雲朵時，改成對齊雲朵群的包圍盒中心；沒有雲朵時（初次載入、剛切換模式，都還沒
    選情緒）維持原本的幾何置中，行為不變。 */
-function centerStageScroll(){
+/* QA 報告第七輪：使用者實測回報「開啟時預設沒有置中」——真的用 GitHub Pages 上的部署版本
+   量過：.stage 的 scroll-behavior:smooth 讓這裡算好的 scrollLeft/Top 用動畫慢慢滑過去，
+   實測耗時比預期長不少（超過 1 秒），初次載入這一刻使用者根本還沒看過畫面就已經先看到
+   「沒有置中」的第一印象，等動畫真的播完使用者可能都已經離開視線或截圖回報了——這不是
+   centerStageScroll() 的計算邏輯錯，是「用動畫捲到正確位置」這個手法在初次載入這個時機
+   選錯了。真正需要平滑捲動、讓使用者看得出「畫面因為我的操作而移動」的情境，是選情緒／
+   選中層詞之後（renderClouds() 觸發的那幾次呼叫）；初次載入、切換模式這種「使用者還沒看過
+   畫面、或畫面剛整個重來一次」的情境，應該直接跳到正確位置，不要有任何動畫。
+   instant 為 true 時，暫時把 scroll-behavior 切成 auto、捲完再還原，只影響這一次呼叫，
+   不影響 CSS 本身的 smooth 設定（其他呼叫端不用跟著改）。 */
+function centerStageScroll(instant){
   const st = document.querySelector('.stage');
   if(!st) return;
+  const applyScroll = (left, top) => {
+    if(instant){
+      const prevBehavior = st.style.scrollBehavior;
+      st.style.scrollBehavior = 'auto';
+      st.scrollLeft = left; st.scrollTop = top;
+      st.style.scrollBehavior = prevBehavior;
+    }else{
+      st.scrollLeft = left; st.scrollTop = top;
+    }
+  };
+
   const wrap = document.querySelector('.wheel-wrap');
   const clouds = wrap ? wrap.querySelectorAll('#bubbleLayer .cloud') : [];
   if(!wrap || !clouds.length){
-    st.scrollLeft = (st.scrollWidth - st.clientWidth) / 2;
-    st.scrollTop = (st.scrollHeight - st.clientHeight) / 2;
+    applyScroll((st.scrollWidth - st.clientWidth) / 2, (st.scrollHeight - st.clientHeight) / 2);
     return;
   }
   const box = cloudsBoundingBoxInStage_(wrap, clouds);
@@ -530,8 +550,10 @@ function centerStageScroll(){
 
   const maxScrollLeft = Math.max(0, st.scrollWidth - st.clientWidth);
   const maxScrollTop = Math.max(0, st.scrollHeight - st.clientHeight);
-  st.scrollLeft = Math.max(0, Math.min(maxScrollLeft, (box.left + box.right) / 2 - st.clientWidth / 2));
-  st.scrollTop = Math.max(0, Math.min(maxScrollTop, (box.top + box.bottom) / 2 - st.clientHeight / 2));
+  applyScroll(
+    Math.max(0, Math.min(maxScrollLeft, (box.left + box.right) / 2 - st.clientWidth / 2)),
+    Math.max(0, Math.min(maxScrollTop, (box.top + box.bottom) / 2 - st.clientHeight / 2))
+  );
 }
 
 /* 算出目前畫面上所有 .cloud 的包圍盒，換算成「.stage 捲動內容座標系」下的座標（給 centerStageScroll

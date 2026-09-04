@@ -1238,7 +1238,9 @@ function switchViewMode(mode){
   applyWheelState();
   renderClouds();
   // 等這一輪 render 造成的排版變化落定，再重新置中（跟初次載入用同一個延遲）
-  setTimeout(centerStageScroll, 50);
+  // QA 報告第七輪：instant=true，理由同初次載入那個呼叫點——切換模式當下畫面整個重畫，
+  // 不是「使用者剛做了一個小動作、期待看到平滑的回饋捲動」那種情境，直接跳過去。
+  setTimeout(() => centerStageScroll(true), 50);
 }
 
 function resetOutwardState(){
@@ -1758,8 +1760,11 @@ function applyPublishedData_(data){
       // so it runs after this render pass's own layout settles. The loading mask is lifted in this same
       // callback so the scroll position is already correct the moment the page fades into view — never
       // a visible jump from off-centre to centred.
+      // QA 報告第七輪：instant=true——這裡是初次載入，.stage 的 scroll-behavior:smooth 會讓這一次
+      // 置中變成一段使用者看得到、耗時超過 1 秒的捲動動畫，違背上面這段註解本來就想達成的
+      // 「never a visible jump」。使用者實測回報「開啟時沒有置中」，根因就是這個。
       setTimeout(() => {
-        centerStageScroll();
+        centerStageScroll(true);
         document.body.classList.remove('is-loading');
       }, 50);
 
