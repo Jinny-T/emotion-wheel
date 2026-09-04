@@ -9,22 +9,38 @@
      開啟了哪一個特定的情緒輪，那個 id 對應心理師開給這位案主的特定處方，在諮商情境下這是
      有意義的隱私資訊。字體與 API 都不需要 referrer 就能運作，直接關掉最乾淨。 -->
 <meta name="referrer" content="no-referrer">
-<!-- QA 報告第八輪 S-4：connect-src 一定要含 script.googleusercontent.com——?api=published／
-     ?api=template 會先回 302 轉址到 script.google.com/macros/echo?...，只寫 script.google.com
-     的話 fetch 會在轉址後被 CSP 擋掉，而且錯誤訊息很像網路失敗、不像 CSP 問題，很難查。
-     style-src 需要 'unsafe-inline'：.cloud 是用 el.style.left／el.style.top 定位（CSSOM 賦值，
-     不是 inline style 屬性，但實測仍然需要這個指令才能生效）。img-src 需要 data:：材質與套圖
-     都是 data URL。script-src 刻意不含 'unsafe-inline'——這是這一步能把 CSP 真的當一條防線
-     而不是形式主義的關鍵，前提是 Viewer.html 完全不含任何 inline <script>（見下面 <body>
-     附近的說明：深層連結解析已經搬進 Viewer_JS.html 自己處理）。 -->
+<!-- QA 報告第八輪 S-4（第八輪後續：script-src 的 'unsafe-inline' 補回來，見下方說明）：
+     connect-src 一定要含 script.googleusercontent.com——?api=published／?api=template 會先回
+     302 轉址到 script.google.com/macros/echo?...，只寫 script.google.com 的話 fetch 會在轉址後
+     被 CSP 擋掉，而且錯誤訊息很像網路失敗、不像 CSP 問題，很難查。style-src 需要 'unsafe-inline'：
+     .cloud 是用 el.style.left／el.style.top 定位（CSSOM 賦值，不是 inline style 屬性，但實測仍然
+     需要這個指令才能生效）。img-src 需要 data:：材質與套圖都是 data URL。
+
+     script-src 這裡含 'unsafe-inline'，是原本 S-4 沒設想到的一個地方：Viewer.html 是 dist/
+     （Apps Script 退路）跟 dist-web/（GitHub Pages 正式版）共用的單一來源，但兩邊「怎麼載入
+     Shared_JS／Viewer_JS 的程式碼」完全不同——dist-web/ 是外部 <script src="shared.js">，
+     同源、'self' 就夠了；dist/ 走下面 <body> 結尾處那兩行樣板引入標記（原始碼裡搜尋
+     include_ 就能找到），那個標記會把整份 JS 原始碼直接貼成這一頁自己的 inline
+     <script>...</script>（不是外部檔案參照，這是 HtmlService 這個模板系統唯一能把多個
+     .html 檔案組成一頁的方式），沒有 'unsafe-inline'
+     的話這一整段 inline 程式碼會被瀏覽器直接擋掉——退路整頁空白、卡在載入中，使用者實測回報
+     就是這個症狀。修法：這裡（單一來源）維持 'unsafe-inline'，讓 dist/ 那份能正常執行；
+     build_deploy.py 的 build_viewer_html_for_web() 建置 dist-web/ 的時候，另外把這個
+     'unsafe-inline' 從輸出的 CSP 字串裡拿掉——dist-web/ 本來就沒有任何 inline <script>
+     （深層連結解析已經搬進 Viewer_JS.html 自己處理，見下面 <body> 附近的說明），拿掉
+     'unsafe-inline' 才是那一份真正該有的、更嚴格的政策，不該因為 dist/ 的限制被迫放寬。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; font-src https://cdn.jsdelivr.net; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <title>互動情緒輪</title>
 <link rel="stylesheet" href="viewer.css?v=1dd8faab4b">
 </head>
 <!-- QA 報告第八輪 S-4：以前這裡用 inline <script> 印出 DEEP_LINK_WHEEL_ID／DEEP_LINK_MODE
-     兩個全域變數給 Viewer_JS.html 用，但 inline <script> 一天存在，CSP 的 script-src 就得
-     放行 'unsafe-inline'、整條政策形同虛設。改成印在 <body> 的 data-* 屬性上——屬性值不是
-     <script>，不受 script-src 限制。這裡故意用「會做 HTML escape」的那種樣板標記，不是本檔案
+     兩個全域變數給 Viewer_JS.html 用，改成印在 <body> 的 data-* 屬性上——屬性值不是 <script>，
+     不受 script-src 限制。這件事對 dist-web/（GitHub Pages）仍然是必要的：那一份除了這裡以外
+     沒有任何其他 inline <script>，CSP 才能真的不含 'unsafe-inline'（見上面 build_deploy.py
+     那段說明）。對 dist/（Apps Script 退路）本身效果有限——那份因為 include_() 的關係本來就
+     得放行 'unsafe-inline'（見上面），但這裡的寫法沒有變：兩邊共用同一份 Viewer.html 原始碼，
+     不需要為了 dist/ 已經放寬這件事，反過來把 dist-web/ 也弄髒。這裡故意用「會做 HTML escape」
+     的那種樣板標記，不是本檔案
      其他地方印進 <script> 字串常值時用的「強制輸出、不跳脫」那種：這裡是印進一般 HTML 屬性值，
      escape 才是這個情境該用的（就算清洗規則以後被改鬆，escape 也能防止跳出屬性引號，屬於多一層
      縱深防禦；目前 doGet() 已經把 wheel 限縮成 [A-Za-z0-9_-]、mode 限縮成兩個已知值，兩者都
@@ -92,8 +108,11 @@
 
 <!-- QA 報告第八輪 S-4：處方連結（?wheel=…&mode=…）的解析邏輯原本在這裡用一段 inline <script>
      處理，現在搬進 Viewer_JS.html 自己的最前面（見那支檔案「處方連結」那段），伺服器端算出來
-     的值改成印在上面 <body> 的 data-deep-link-* 屬性上。這裡不再需要任何 inline <script>——
-     這正是上面 CSP 的 script-src 能不含 'unsafe-inline' 的原因。 -->
+     的值改成印在上面 <body> 的 data-deep-link-* 屬性上。這裡（Viewer.html 自己的原始碼）不再
+     需要任何 inline <script>——這正是 dist-web/（GitHub Pages）的 CSP 能不含 'unsafe-inline'
+     的原因（build_deploy.py 建置那份輸出時會把 'unsafe-inline' 從 script-src 拿掉，見上面
+     CSP 那段的完整說明）；dist/（Apps Script 退路）因為下面 include_() 本身會整段內嵌 JS
+     原始碼，不受這裡「有沒有 inline <script>」影響，那份的 script-src 仍然含 'unsafe-inline'。 -->
 <script src="shared.js?v=1dd8faab4b"></script>
 <script src="viewer.js?v=1dd8faab4b"></script>
 </body>
