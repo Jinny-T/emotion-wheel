@@ -1,0 +1,541 @@
+  :root{
+    --bg: #F3E7D3; --panel: #FFFCF4; --paper: #FFFBF2; --ink: #4A3626; --ink-soft: #8C7660;
+    --line: #E6D4B4; --accent: #C98A4B; --ink-dark: #3B2A1B; --glow: rgba(255,205,120,.38);
+    --app-font: "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  button, input, textarea, select{ font-family: inherit; }
+  html{ scrollbar-color: var(--accent) var(--panel); scrollbar-width: thin; }
+  *::-webkit-scrollbar{ width: 12px; height: 12px; }
+  *::-webkit-scrollbar-track{ background: var(--panel); }
+  *::-webkit-scrollbar-thumb{ background: var(--accent); border-radius: 8px; border: 2px solid var(--panel); }
+  *::-webkit-scrollbar-thumb:hover{ background: var(--ink); }
+  html, body{ position: relative; }
+  body{
+    margin:0;
+    font-family: var(--app-font);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 20px 80px;
+  }
+  /* Data (theme, wheel, settings) loads async from the sheet, so the very first paint would otherwise
+     show the hard-coded default --bg/theme for a moment before applyTheme() swaps it — a visible flash
+     to a colour the user never chose. Masking behind a neutral loading screen until data actually
+     lands avoids that flash entirely; body.is-loading is set in the HTML from first paint and removed
+     by JS once the real theme/content is ready. */
+  body.is-loading{ background: #F9F9F9 !important; }
+  body.is-loading .layout{ opacity: 0; pointer-events: none; }
+  body.is-loading::after{
+    content: "載入中...";
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 15px; color: #999; letter-spacing: 2px;
+    animation: pulse 1.5s infinite ease-in-out;
+  }
+  @keyframes pulse{ 0%, 100%{ opacity: .4; } 50%{ opacity: 1; } }
+  body::before{
+    content:'';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: .055; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
+  body[data-material="flat"]::before{ display: none; }
+  h1{ font-size: 20px; font-weight: 700; margin: 0 0 4px; text-align:center; position:relative; z-index:1; }
+  .sub{ color: var(--ink-soft); font-size: 13px; margin: 0 0 18px; text-align:center; position:relative; z-index:1; }
+  .page-footer{ text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: 40px; padding-bottom: 24px; line-height: 1.5; word-break: break-word; }
+  .layout{ max-width: 900px; margin: 0 auto; display:flex; flex-direction:column; gap:16px; position:relative; z-index:1; transition: opacity .6s ease; }
+
+  .wheel-panel{
+    position: relative;   /* 模式切換鈕靠這個定位到卡片外側 */
+    background: var(--panel); border-radius: 22px; border: 1px solid var(--line);
+    padding: 28px; display: flex; flex-direction: column; align-items: center;
+    box-shadow: 0 24px 48px -28px rgba(59,42,27,.35);
+  }
+  .wheel-header{ width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; max-width: 840px; }
+  .breadcrumb{ font-size: 14px; color: var(--ink-soft); }
+  /* word-break: keep-all —— 中文沒有空白分詞，瀏覽器預設會把 CJK 字串當成「每個字都是
+     斷行點」，麵包屑空間不夠時就會像「恍神麻」「木」這樣把一個詞從中間切開。
+     keep-all 讓整串文字被當成一個不可斷的詞，空間不夠時整塊換行，不會切字。 */
+  .breadcrumb b{ color: var(--ink); font-weight: 700; word-break: keep-all; }
+  .btn{ border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 8px 14px; border-radius: 999px; font-size: 12.5px; cursor: pointer; }
+  .btn:hover{ background: #FBF1DE; }
+  .back-btn{
+    border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 7px 14px;
+    border-radius: 999px; font-size: 13px; cursor: pointer; visibility: hidden;
+  }
+  .back-btn.show{ visibility: visible; }
+  .back-btn:hover{ background: #FBF1DE; }
+
+  /* display:block (not flex) — flex's justify/align-content:center only accounts for overflow on the
+     "end" side of each axis in its scrollable-overflow calculation, so content centered past a flex
+     container's edge on the "start" side becomes permanently unreachable by scrolling (you can only
+     glimpse it via a touch drag's elastic overscroll bounce, which snaps back on release since it was
+     never a real scroll position to begin with). Plain block layout doesn't have this blind spot. */
+  /* scroll-behavior: smooth——第三輪 R-1 補測：centerStageScroll() 改成會對齊雲朵群之後，選情緒／
+     選中層詞時捲軸可能會位移，平滑捲動比瞬間跳動更不突兀；prefers-reduced-motion 關掉見下面。 */
+  .stage{ position: relative; width: 100%; display: block; overflow: auto; padding: 24px 0 32px 0; scroll-behavior: smooth; }
+  /* container-type turns .wheel-wrap into a query container for its own inline-size (width); --px is
+     "1/840th of that width" so every cloud/tail dimension below can be written as calc(N * var(--px))
+     and stay perfectly proportional to whatever size the wheel actually renders at, mobile included.
+     aspect-ratio (not a fixed height) keeps the box square as max-width shrinks it on narrow screens —
+     a fixed height would leave it a tall, skinny non-square rectangle, clipping most of the wheel. */
+  /* margin (not padding) creates the scroll buffer around the wheel: margin doesn't participate in
+     this element's own width/aspect-ratio math, so it can't distort the square SVG/bubble-layer the
+     way padding + box-sizing:content-box would (padding would inflate this box into a non-square
+     rectangle, and #bubbleLayer — position:absolute; inset:0 — sizes itself to the PADDING box, so it
+     would end up a different, mismatched shape from #wheelSvg, which sizes off the CONTENT box).
+     Margin instead just reserves empty scrollable space around an unchanged, still-square wheel. */
+  .wheel-wrap{ position: relative; width: 840px; max-width: 100%; aspect-ratio: 1 / 1; flex-shrink: 0; container-type: inline-size; --px: calc(100cqi / 840); margin: 100px 120px; }
+  .wheel-wrap::before{
+    content:''; position: absolute; inset: -70px; z-index: -1;
+    background: radial-gradient(ellipse 60% 55% at 34% 28%, var(--glow), rgba(255,255,255,0) 65%);
+    filter: blur(6px);
+  }
+  body[data-material="flat"] .wheel-wrap::before{ display: none; }
+  #wheelSvg{ width: 100%; height: 100%; display: block; overflow: visible; }
+  .segment{ cursor: pointer; filter: var(--wc-filter, none); transition: filter .2s ease; }
+  .wedge{ transition: opacity .28s ease; }
+  .wedge:hover .segment{ filter: var(--wc-filter, none) brightness(1.07) saturate(1.12); }
+  .wheel-group{ transition: transform .55s cubic-bezier(.3,.9,.3,1); }
+  .segment-label{
+    font-size: 15px; font-weight: 700; fill: #FFFAEF; pointer-events: none;
+    paint-order: stroke; stroke: rgba(59,42,27,.4); stroke-width: 2.5px; stroke-linejoin: round;
+  }
+  .wheel-center-label{ font-size: 13px; fill: var(--ink-soft); text-anchor: middle; transition: opacity .2s ease; }
+
+  /* 焦點提示只在「真的正在用鍵盤操作」時才出現。
+     這裡刻意不依賴瀏覽器的 :focus-visible 判斷：扇區是 SVG <path>，實測滑鼠點一下也會
+     被判定成需要顯示焦點框，於是點圓餅就冒出一個方框——而 outline 是沿著元素的「矩形
+     邊界」畫的，跟扇形的形狀完全對不上，看起來就是一塊突兀的黑框壓在圖上。
+     改成由 JS 明確記錄使用者是用鍵盤還是滑鼠（見 Shared_JS 的 markKeyboardNav）。 */
+  .segment:focus, .cloud:focus,
+  .segment:focus-visible, .cloud:focus-visible{ outline: none; }
+
+  /* 扇區用「描邊」而不是外框：描邊會沿著扇形自己的輪廓走，外框只畫得出一個矩形。 */
+  .kbd-nav .segment:focus{
+    stroke: var(--accent);
+    stroke-width: 6;
+    stroke-linejoin: round;
+  }
+  /* 雲朵本來就是圓角方塊，外框貼合得很好，維持用 outline。 */
+  .kbd-nav .cloud:focus{
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+
+  /* ==================== 由外而內（outward）模式 ====================
+     泡泡先自由飄浮、點一句之後其餘如雲散開，再逐層揭示背後的中層詞與基礎情緒。
+     用的是跟 inward 完全相同的 .cloud/.cloud-sentence/.cloud-mid 元件，只是換一組動畫與位置。 */
+
+  /* outward 的泡泡不跟著圓餅縮放。
+     inward 的泡泡是繞著圓餅排的，所以用 --px（＝容器寬的 1/840）等比縮放才對得上輪盤；
+     但 outward 飄浮時圓餅是藏起來的，泡泡本身就是全部的內容，再照 1/840 縮放的話，
+     在 277px 寬的手機上一顆只有 35×15px，既讀不到也點不到。這裡改回實際可讀的尺寸，
+     並確保觸控目標 ≥44px（備忘「手機」一節的要求）。 */
+  .wheel-wrap.outward-mode .cloud-sentence,
+  .wheel-wrap.outward-mode .cloud-mid{
+    /* 上限乘上 --text-scale：這個變數本來就是為了「換成手寫／圓體這種裝飾字體時，同樣的
+       px 視覺上看起來比黑體小，要放大一點才等重」而存在的（見 applyFont()，辰宇落雁體
+       1.35、OPEN粉圓 1.1、系統字體 1）。inward 模式的 .cloud-mid/.cloud-sentence 早就在用
+       它了（下面幾條規則），這裡漏接只是疏忽——手機上 3.2vw 那個隨螢幕寬度變化的項目才是
+       主導值，本來就測過可以不用管；桌機超過大約 484px 寬時 3.2vw 會被上限這裡卡住，
+       所以只需要放大上限，不用動下限跟 3.2vw，才不會動到已經在真機測過的手機尺寸。 */
+    font-size: clamp(12.5px, 3.2vw, calc(15.5px * var(--text-scale, 1)));
+    /* 13px 上下內距 + 一行 ~18px = 44px，剛好達到觸控目標下限。刻意不用 flex/grid 置中：
+       這顆泡泡是 position:absolute 的收縮寬度盒子，一旦變成 flex 容器，裡面的匿名文字項目
+       會被允許縮到 min-content——中文的 min-content 是「一個字」，長句就會變成一字一行的直條。 */
+    padding: 13px 16px;
+    /* width:max-content 是必要的，不是多餘的：這顆泡泡 position:absolute 且只設了 left，
+       所以預設的「收縮至適合」寬度上限是「從 left 到容器右緣的剩餘空間」——飄到右側的泡泡
+       只剩十幾 % 的空間可用，就會被擠成一個字一行的直條。max-content 讓它先照內容決定寬度，
+       再由下面的 max-width 收斂。 */
+    width: max-content;
+    max-width: min(46%, 200px);
+    box-sizing: border-box;
+    line-height: 1.45;
+    white-space: normal;
+  }
+  .wheel-wrap.outward-mode .cloud-sentence::before,
+  .wheel-wrap.outward-mode .cloud-mid::before{
+    inset: -5px -7px;
+    border-width: 1.6px;
+    box-shadow: 0 10px 20px -9px var(--halo, rgba(59,42,27,.22));
+  }
+  body[data-material="wood"] .wheel-wrap.outward-mode .cloud-sentence::before,
+  body[data-material="wood"] .wheel-wrap.outward-mode .cloud-mid::before{ border-width: 2.4px; }
+
+  /* 飄浮中的泡泡：刻意「不帶」基礎情緒色（見備忘「顏色先藏」）——提前上色等於洩題。
+     顏色要等到第三階段揭示基礎情緒時才浮現。 */
+  .cloud-drift{
+    --ink-line: #A89684;
+    --halo: rgba(59,42,27,.16);
+    animation: cloudIn .5s cubic-bezier(.34,1.4,.4,1) forwards,
+               drift var(--drift-dur, 9s) ease-in-out var(--drift-delay, 0s) infinite;
+    animation-delay: 0s, .5s;
+  }
+  @keyframes drift{
+    0%,100%{ transform: translate(-50%,-50%) translate(0, 0) scale(1); }
+    25%{ transform: translate(-50%,-50%) translate(var(--drift-x, 6px), calc(var(--drift-y, 8px) * -1)) scale(1.01); }
+    50%{ transform: translate(-50%,-50%) translate(0, calc(var(--drift-y, 8px) * -1.6)) scale(1); }
+    75%{ transform: translate(-50%,-50%) translate(calc(var(--drift-x, 6px) * -1), calc(var(--drift-y, 8px) * -0.6)) scale(.99); }
+  }
+
+  /* 雲散開：往自己所在的方向再飄出去一段並淡出。--fly-x/--fly-y 由 JS 依該泡泡相對中心的
+     方位計算，所以是「從中心向外擴散」而不是全部往同一邊飛。 */
+  .cloud-disperse{
+    animation: disperse .55s cubic-bezier(.4,0,.7,1) forwards !important;
+    pointer-events: none;
+  }
+  @keyframes disperse{
+    from{ transform: translate(-50%,-50%) translate(0,0) scale(1); opacity: 1; }
+    to{ transform: translate(-50%,-50%) translate(var(--fly-x,0), var(--fly-y,0)) scale(.86); opacity: 0; }
+  }
+
+  /* 被選中的那顆：飄到畫面中央並微微放大，成為揭示過程的主角
+     transform 一定要 !important：這顆雲跟基底的 .cloud{} 規則一樣只有單一 class 的選擇器
+     特異度（都是 0,1,0），排在後面的規則贏——這個檔案裡 .cloud{} 剛好排在 .cloud-chosen
+     後面，它的 transform: scale(0)（進場動畫的起始影格）會蓋掉這裡的 scale(1.06)。平常看
+     不出來是因為進場/漂浮動畫（cloudIn／floaty）全程佔著 transform 這個屬性，animation
+     的優先權天生高於一般宣告；但這裡緊接著設了 animation: none，動畫一撤掉，
+     真正生效的就變成這份靜態宣告，此時特異度打平、比的是檔案順序，於是整朵雲被縮成 0，
+     連 getBoundingClientRect 都量到 0×0（實際發生過：揭示到一半那朵「被選中的泡泡」
+     整個消失不見）。 */
+  .cloud-chosen{
+    animation: none !important;
+    /* 1.5s + 尾段極緩的曲線：讓上升像被托著慢慢浮起來，而不是滑到定位 */
+    transition: left 1.5s cubic-bezier(.22,.61,.24,1), top 1.5s cubic-bezier(.22,.61,.24,1), transform 1.5s cubic-bezier(.22,.61,.24,1);
+    transform: translate(-50%,-50%) scale(1.06) !important;
+    z-index: 3;
+  }
+
+  /* 「還可以再往下點一層」的提示：進場後持續輕微呼吸，讓這朵雲看起來是可以按的。
+     沒有這個訊號的話，使用者會以為揭示已經結束（因為現在不再自動跳轉了）。 */
+  .cloud-next{ cursor: pointer; }
+  /* 選擇器要跟上面 .wheel-wrap.outward-mode .cloud-mid::before 一樣「重」，
+     否則那條規則的 border-width 會蓋過這裡的加粗。
+     .cloud-next 只有 outward 的揭示流程會加上去，inward 從頭到尾不會用到，
+     所以加粗框線不會動到 inward 的任何一朵雲。 */
+  .wheel-wrap.outward-mode .cloud-next::before{
+    animation: nextPulse 1.9s ease-in-out .4s infinite;
+    border-width: 2.8px;
+  }
+  @keyframes nextPulse{
+    /* 縮放的是 ::before（那層白底光暈）本身，它是 inset 定位、沒有自己的位移，
+       所以這裡只寫 scale；雲朵本體的 translate(-50%,-50%) 不受影響。 */
+    0%,100%{ box-shadow: 0 0 0 0 rgba(201,138,75,0); transform: scale(1); }
+    50%{ box-shadow: 0 0 0 9px rgba(201,138,75,.3); transform: scale(1.05); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .cloud-next::before{ animation: none; box-shadow: 0 0 0 4px rgba(201,138,75,.3); }
+    .stage{ scroll-behavior: auto; }
+  }
+
+  /* 揭示時浮現的中層詞雲朵／基礎情緒——沿用既有元件，只是換一個淡入方式 */
+  .cloud-reveal{
+    animation: revealIn .55s cubic-bezier(.34,1.3,.4,1) forwards !important;
+  }
+  @keyframes revealIn{
+    from{ transform: translate(-50%,-50%) scale(.8); opacity: 0; }
+    to{ transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  }
+
+  /* 揭示基礎情緒時，整個舞台漸漸染上該情緒的顏色 */
+  .wheel-wrap::after{
+    content:''; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, var(--reveal-tint, transparent) 0%, rgba(0,0,0,0) 70%);
+    opacity: 0; transition: opacity .8s ease; pointer-events: none; z-index: 0;
+  }
+  .wheel-wrap.tinted::after{ opacity: 1; }
+
+  /* outward 進行揭示時，圓餅本體要能單獨淡入淡出（inward 不受影響） */
+  #wheelSvg{ transition: opacity .6s ease; }
+  .wheel-wrap.outward-hide-wheel #wheelSvg{ opacity: 0; }
+
+  /* 收尾三顆鈕做成底部浮動列：手機上不必捲到底才按得到，拇指範圍內就能操作。
+     跟 inward 的「加入」膠囊鈕同一套定位邏輯（fixed + safe-area）。 */
+  #outwardActions{
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); z-index: 100;
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    width: max-content; max-width: calc(100vw - 24px);
+    animation: collectRowIn .35s cubic-bezier(.34,1.4,.4,1) both;
+    /* 泡泡會在背景飄，飄到按鈕列正後方時視覺會打架——給整排按鈕加一塊毛玻璃底板，
+       讓這排鈕讀起來像一個獨立的「儀表板」，跟背景的泡泡分成兩層，不管泡泡飄到哪都不會撞色。
+       padding 把底板往外撐出按鈕本身之外一圈，因為 .btn 自己已經是不透明白底，
+       底板主要是遮住鈕與鈕「之間縫隙」透出來的背景。 */
+    padding: 8px; border-radius: 999px;
+    background: rgba(255, 251, 242, .55);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    backdrop-filter: blur(14px) saturate(1.4);
+    box-shadow: 0 10px 28px -14px rgba(59,42,27,.4);
+  }
+  /* 不支援 backdrop-filter 的瀏覽器（極少數）：退成不透明底板，一樣能擋住背景 */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+    #outwardActions{ background: rgba(255, 251, 242, .92); }
+  }
+  #outwardActions .btn{
+    padding: 12px 22px; font-size: calc(14px * var(--text-scale, 1)); font-weight: 600;
+    box-shadow: 0 8px 22px -6px rgba(59,42,27,.35);
+  }
+
+  /* 整輪看完都沒共鳴時，畫面中央的邀請語 */
+  .outward-exhausted{
+    position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%);
+    width: min(78%, 320px); text-align: center;
+    font-size: clamp(14px, 3.6vw, 17px); line-height: 1.7;
+    color: var(--ink); opacity: .88;
+    animation: revealIn .5s cubic-bezier(.34,1.3,.4,1) both;
+  }
+
+  /* both 輪才出現的模式切換：貼在情緒輪卡片「外面」的左側，小小的兩顆，
+     不佔卡片內部空間、也不跟雲朵搶位置。 */
+  #modeSwitcherRow{
+    position: absolute; top: 26px; left: -12px;
+    transform: translateX(-100%);          /* 整組推到卡片左緣之外 */
+    display: flex; flex-direction: column; gap: 6px; z-index: 5;
+  }
+  .mode-switch-btn{
+    padding: 8px 13px; font-size: calc(12.5px * var(--text-scale, 1));
+    white-space: nowrap; line-height: 1.4;
+  }
+  .mode-switch-btn.active{ background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* 視窗不夠寬時卡片外面已經沒有空間了（手機上卡片幾乎佔滿畫面）。
+     改成貼在卡片左緣內側的直書小標籤：直書讓它只佔約 30px 寬，
+     橫向空間就不會不夠，也不會壓到中央的圓餅／雲朵。 */
+  @media (max-width: 1100px){
+    #modeSwitcherRow{ left: 4px; transform: none; top: 24px; }
+    .mode-switch-btn{
+      writing-mode: vertical-rl; text-orientation: upright;
+      padding: 12px 6px; letter-spacing: 3px;
+    }
+    /* 直書切換鈕是絕對定位的，會蓋在卡片左上角＝麵包屑文字的位置上。
+       只有真的有切換鈕（both 輪）時才讓麵包屑往右退讓，其他輪維持原本的滿版寬度。 */
+    .wheel-panel.has-mode-switcher .wheel-header{ padding-left: 42px; }
+  }
+
+  /* H-1 修法的第二部分：inward 的雲字級是用 --px（＝輪盤容器寬度 / 840）等比縮放的，
+     窄螢幕上輪盤本身就小，字自然跟著小。body 的左右 padding（20px）加上 .wheel-panel 的
+     padding（28px）在 375px 手機上合計吃掉 96px 螢幕寬——把這兩層 padding 縮小，等於直接
+     把更多螢幕寬度還給輪盤本身，--px 跟著變大，上面加的字級下限也更不容易被頂到、雲朵
+     重疊的機率更低。實測（QA 報告 H-1）光這一項就能把 375px 手機的輪盤從 277px 拉到約
+     341px，--px 從 0.33 提升到 0.41。 */
+  @media (max-width: 640px){
+    body{ padding: 16px 8px 60px; }
+    .wheel-panel{ padding: 14px; }
+  }
+
+  #bubbleLayer{ position: absolute; inset: 0; pointer-events: none; }
+  .cloud{
+    position: absolute; transform: translate(-50%, -50%) scale(0); pointer-events: auto; cursor: pointer; text-align: center;
+    animation: cloudIn .4s cubic-bezier(.34,1.4,.4,1) forwards, floaty 4.6s ease-in-out infinite;
+    animation-delay: 0s, .4s; transition: opacity .2s ease;
+  }
+  .cloud-mid{
+    padding: calc(10 * var(--px)) calc(20 * var(--px));
+    /* outward 模式的同一個元件老早就用 clamp() 加了下限（見上面 .wheel-wrap.outward-mode
+       .cloud-mid 的說明），inward 這裡卻是裸 calc()，完全沒有下限——inward 是預設模式、也是
+       所有 mode:'inward' 輪的唯一模式，QA 報告 H-1 實測過 320~430px 手機上這裡只有 3.6~5.5px，
+       字級小到不能算是可讀。跟 outward 不同的是 inward 的雲繞著圓餅排列，字太大會互相重疊，
+       所以不能直接抄 outward 那個 12.5px 的下限，用 max() 保住 --px 等比縮放的同時墊一個
+       較保守的地板值。 */
+    /* QA 報告第四輪 B-3 曾經實測過抬高這個下限，每一組增量都讓 mid/sentence 重疊變糟，維持
+       了原本的 11px——但那組結論的前提是泡泡句淨空係數還是 0.7（見 renderSentenceBubbleEl
+       的 clearance 計算），幾乎沒有任何餘裕可以放大字級。**第六輪 F-2 把係數改成 1.5 之後
+       （SENTENCE_CLEARANCE_FACTOR，見 Shared_JS.html），批次 24 用 Code.gs 真正的
+       SAMPLE_EMOTIONS_ 資料（不是合成測資）重新掃過一次 11.5/12/12.5px 這幾組增量：
+       12.5px（跟探索模式的下限對齊）+ .cloud-sentence 11.5px 這組合，375px、9 個情緒全部
+       通過驗收（最嚴重重疊 3%、0/9 超過 18%；超出可視區最大 34px，在放寬後的 ≤35px 內；
+       完全捲不到的雲朵 0）；1440px 桌機同樣沒有回歸。詳細數據見第六輪批次 24 進度記錄。
+       跟探索模式的字級下限一致之後，兩種模式切換時字級落差感應該消失了。 */
+    font-size: max(12.5px, calc(14 * var(--px) * var(--text-scale, 1))); font-weight: 700; color: var(--ink); white-space: nowrap;
+    z-index: 1;
+  }
+  .cloud-mid::before{
+    content:''; position: absolute; inset: calc(-6 * var(--px)) calc(-8 * var(--px));
+    background: var(--bubble-fill, var(--paper));
+    border: calc(1.6 * var(--px)) solid var(--ink-line, #8C7660);
+    border-radius: var(--blob-radius, 46% 54% 51% 49% / 53% 46% 54% 47%);
+    filter: url(#roughEdge);
+    box-shadow: 0 calc(12 * var(--px)) calc(22 * var(--px)) calc(-10 * var(--px)) var(--halo, rgba(59,42,27,.3));
+    z-index: -1;
+  }
+  .cloud-mid.selected{ color: #fff; }
+  .cloud-mid.dim{ opacity: .5; }
+
+  .cloud-sentence{
+    padding: calc(13 * var(--px)) calc(19 * var(--px));
+    /* 跟 .cloud-mid 同一個問題、同一個修法，見那邊的說明。 */
+    /* QA 報告第六輪批次 24：這裡的地板值抬到 11.5px，沒有跟 .cloud-mid 一樣抬到跟探索模式對齊
+       的 12px——實測 12px 會讓「問號（不確定）」這個真實情緒的超出可視區衝到 36px（超過放寬後
+       ≤35px 的標準），11.5px 則是 34px，同時 mid↔sentence 重疊、完全捲不到兩項也都通過，是
+       目前測過「.cloud-mid 對齊 12.5px」這個前提下，.cloud-sentence 能撐住全部三項驗收條件的
+       最大值。見那邊 .cloud-mid 的完整說明與第六輪批次 24 進度記錄的實測數據。 */
+    font-size: max(11.5px, calc(13.5 * var(--px) * var(--text-scale, 1))); font-weight: 500; color: var(--ink); max-width: calc(168 * var(--px));
+    /* width:max-content 是必要的，不是多餘的：這顆泡泡 position:absolute 且只設了 left，
+       預設的「收縮至適合」寬度上限是「從 left 到容器右緣的剩餘空間」——飄到扇形右側、
+       離邊緣很近的泡泡剩不到幾 % 空間，長句子就會被擠成一個字一行的細長條。
+       max-content 讓它先照內容決定寬度，再由上面的 max-width 收斂。 */
+    width: max-content;
+    box-sizing: border-box;
+    z-index: 2;
+  }
+  .cloud-sentence::before{
+    content:''; position: absolute; inset: calc(-7 * var(--px)) calc(-9 * var(--px));
+    background: var(--paper);
+    border: calc(1.5 * var(--px)) solid var(--ink-line, #8C7660);
+    border-radius: var(--blob-radius, 46% 54% 51% 49% / 53% 46% 54% 47%);
+    filter: url(#roughEdge);
+    box-shadow: 0 calc(12 * var(--px)) calc(22 * var(--px)) calc(-10 * var(--px)) var(--halo, rgba(59,42,27,.22));
+    z-index: -1;
+  }
+  /* Anchored at the bubble's own centre (not an edge) and rotated per-bubble (JS) so the
+     trail's local "down" always points back toward the wheel's centre. The dots themselves
+     start far enough out (top offset) to clear the bubble's edge in whichever direction that
+     ends up being, instead of always assuming the edge sits at a fixed bottom-left spot. */
+  .tail-wrap{ position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: -2; }
+  .tail-dot{
+    position: absolute;
+    background: var(--paper);
+    border: calc(1.3 * var(--px)) solid var(--ink-line, #8C7660);
+    filter: url(#roughEdge);
+    z-index: -1;
+  }
+  .tail-dot-1{ width: calc(13 * var(--px)); height: calc(13 * var(--px)); left: calc(-6 * var(--px)); top: calc((36 * var(--px)) + var(--tail-push, 0px)); border-radius: 55% 45% 60% 40%; }
+  .tail-dot-2{ width: calc(8 * var(--px)); height: calc(8 * var(--px)); left: calc(-3 * var(--px)); top: calc((47 * var(--px)) + var(--tail-push, 0px)); border-radius: 50% 55% 45% 50%; }
+  .tail-dot-3{ width: calc(5 * var(--px)); height: calc(5 * var(--px)); left: calc(-1 * var(--px)); top: calc((55 * var(--px)) + var(--tail-push, 0px)); border-radius: 50%; }
+  .cloud-sentence.popped::before{
+    box-shadow: 0 0 0 calc(5 * var(--px)) var(--ink-line, var(--accent)) inset, 0 calc(14 * var(--px)) calc(26 * var(--px)) calc(-10 * var(--px)) var(--halo, rgba(59,42,27,.3));
+  }
+  /* Focused-but-not-yet-added state — thinner ring than .popped, so it reads as "selected, waiting for
+     you to confirm via the 加入 button" rather than "already collected". */
+  .cloud-sentence.focused:not(.popped)::before{
+    box-shadow: 0 0 0 calc(3.5 * var(--px)) var(--accent) inset, 0 calc(12 * var(--px)) calc(22 * var(--px)) calc(-10 * var(--px)) var(--halo, rgba(59,42,27,.22));
+  }
+  .cloud-sentence.focused,
+  .cloud-sentence.popped{
+    font-weight: 700;
+    color: var(--ink-line, var(--ink));
+  }
+
+  body[data-material="flat"] .cloud-mid::before{
+    border-radius: calc(999 * var(--px)); border-width: calc(1.5 * var(--px)); filter: none; box-shadow: 0 calc(6 * var(--px)) calc(14 * var(--px)) rgba(0,0,0,.1);
+  }
+  body[data-material="flat"] .cloud-sentence::before{
+    border-radius: calc(22 * var(--px)); border-width: calc(1.5 * var(--px)); filter: none; box-shadow: 0 calc(6 * var(--px)) calc(14 * var(--px)) rgba(0,0,0,.08);
+  }
+  body[data-material="flat"] .tail-dot{ border-radius: 50%; border-width: calc(1.4 * var(--px)); filter: none; }
+  body[data-material="flat"] .cloud-sentence.popped::before{
+    box-shadow: 0 0 0 calc(5 * var(--px)) var(--ink-line, var(--accent)) inset, 0 calc(6 * var(--px)) calc(14 * var(--px)) rgba(0,0,0,.08);
+  }
+
+  body[data-material="wood"] .cloud-mid::before,
+  body[data-material="wood"] .cloud-sentence::before,
+  body[data-material="wood"] .tail-dot{
+    filter: url(#woodEdge); border-width: calc(2.6 * var(--px));
+  }
+
+  body[data-material="crayon"] .cloud-mid::before,
+  body[data-material="crayon"] .cloud-sentence::before,
+  body[data-material="crayon"] .tail-dot{
+    border-width: calc(1.3 * var(--px)); box-shadow: none;
+  }
+  body[data-material="crayon"] .cloud-sentence.popped::before{
+    box-shadow: 0 0 0 calc(5 * var(--px)) var(--ink-line, var(--accent)) inset;
+  }
+
+  @keyframes cloudIn{
+    from{ transform: translate(-50%,-50%) scale(0); opacity: 0; }
+    to{ transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  }
+  @keyframes floaty{
+    0%,100%{ transform: translate(-50%,-50%) translateY(0) scale(1); }
+    50%{ transform: translate(-50%,-50%) translateY(-7px) scale(1); }
+  }
+
+  .hint{ font-size: 12.5px; color: var(--ink-soft); text-align:center; margin-top: 8px; }
+  .empty-state{ text-align:center; color: var(--ink-soft); font-size: 14px; padding: 60px 0; }
+
+  .selected-panel{
+    background: var(--panel); border-radius: 22px; border: 1px solid var(--line);
+    padding: 20px 24px; box-shadow: 0 24px 48px -28px rgba(59,42,27,.35);
+  }
+  .selected-title{ font-size: 13px; font-weight: 700; color: var(--ink-soft); margin-bottom: 12px; text-align:center; }
+  .selected-tags{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  .selected-empty{ font-size: 12.5px; color: var(--ink-soft); font-style: italic; text-align:center; }
+  .tag-chip{
+    position: relative; display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 10px 9px 14px; font-size: 13px; color: var(--ink);
+    animation: cloudIn .3s cubic-bezier(.34,1.4,.4,1);
+  }
+  .tag-chip::before{
+    content:''; position: absolute; inset: 0;
+    background: var(--paper);
+    border: 1.5px solid var(--ink-line, #8C7660);
+    border-radius: 46% 54% 51% 49% / 53% 46% 54% 47%;
+    filter: url(#roughEdge);
+    box-shadow: 0 8px 16px -8px rgba(59,42,27,.25);
+    z-index: -1;
+  }
+  .tag-dot{ width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tag-remove{ border: none; background: none; color: var(--ink-soft); cursor: pointer; font-size: 13px; padding: 2px 4px; line-height: 1; }
+  .tag-remove:hover{ color: #B5615C; }
+  body[data-material="flat"] .tag-chip::before{ border-radius: 999px; filter: none; box-shadow: 0 4px 10px rgba(0,0,0,.08); }
+  body[data-material="wood"] .tag-chip::before{ filter: url(#woodEdge); border-width: 2.4px; }
+  body[data-material="crayon"] .tag-chip::before{ border-width: 1.2px; box-shadow: none; }
+
+  .template-picker{ display:flex; flex-direction:column; gap:10px; margin-bottom: 14px; }
+  .template-group{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .template-group-label{ font-size: 12px; color: var(--ink-soft); }
+  .template-group-buttons{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .color-mode-row{ display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom: 14px; font-size: 13px; color: var(--ink-soft); cursor: pointer; }
+  .color-mode-row input[type=color]{ width: 28px; height: 28px; border: none; border-radius: 6px; padding: 0; cursor: pointer; }
+  .template-pick-btn.active{ background: var(--accent); border-color: var(--accent); color:#fff; }
+  #generateBtn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  /* Floating bottom capsule (not an inline row) so the "加入" action sits within easy thumb reach on
+     mobile regardless of scroll position. env(safe-area-inset-bottom) keeps it clear of the home
+     indicator on notched phones; slideUpIn re-plays every time the row goes display:none -> '' because
+     that toggle creates a fresh box (a real reflow), which restarts a forwards-filling animation. */
+  #collectLevelRow{
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 100;
+    transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); text-align: center;
+    animation: collectRowIn .35s cubic-bezier(.34,1.4,.4,1) both;
+  }
+  .collect-level-btn{
+    padding: 12px 26px; font-size: calc(14.5px * var(--text-scale, 1)); font-weight: 600;
+    box-shadow: 0 8px 22px -6px rgba(59,42,27,.35);
+  }
+  .collect-level-btn.active{ background: var(--accent); border-color: var(--accent); color:#fff; }
+  @keyframes collectRowIn{
+    from{ transform: translateX(-50%) translateY(24px); opacity: 0; }
+    to{ transform: translateX(-50%) translateY(0); opacity: 1; }
+  }
+
+  #wheelSwitcherRow{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom: 4px; }
+  .wheel-switch-btn.active{ background: var(--accent); border-color: var(--accent); color:#fff; }
+
+  .custom-tag-row{ display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; margin-top: 14px; }
+  .custom-tag-row input[type=color]{ width: 28px; height: 28px; border: none; border-radius: 6px; padding: 0; cursor: pointer; flex-shrink:0; }
+  .custom-tag-row input[type=text]{
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: 13px;
+    font-family: inherit; color: var(--ink); outline: none; background:#fff;
+    flex: 1 1 160px; min-width: 120px; max-width: 260px;
+  }
+  .custom-tag-row input[type=text]:focus{ border-color: var(--accent); }
+
+  /* Same modal chrome as Admin_CSS.html, so the user-facing page can stop using the browser's
+     native alert() — inside the Apps Script sandbox a native alert is attributed to
+     "googleusercontent.com", which looks alarming and foreign to an end user. */
+  .modal-overlay{
+    position: fixed; inset: 0; background: rgba(35,26,16,.4); z-index: 1000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-box{
+    background: var(--panel); border-radius: 16px; padding: 22px 24px; width: min(380px, 100%);
+    box-shadow: 0 24px 60px rgba(0,0,0,.3); border: 1px solid var(--line);
+  }
+  .modal-actions{ display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .modal-message{ margin: 0; font-size: 14px; color: var(--ink); line-height: 1.6; white-space: pre-line; }
