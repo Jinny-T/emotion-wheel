@@ -79,11 +79,28 @@ let wheels = [];
 let activeViewWheelId = null;
 
 /* ---------------- 處方連結（?wheel=…&mode=…）----------------
-   本機版是前端自己用 URLSearchParams 解析網址；在 Apps Script 這招完全行不通——頁面被 Google
-   包在沙盒 iframe 裡，前端的 window.location.search 永遠是空字串。參數只有伺服器端的 doGet(e)
-   讀得到，所以改由 Viewer.html 把值印成全域變數（DEEP_LINK_*），這裡接手。 */
-const deepLinkWheelId = (typeof DEEP_LINK_WHEEL_ID === 'string' && DEEP_LINK_WHEEL_ID) ? DEEP_LINK_WHEEL_ID : null;
-const deepLinkMode = (DEEP_LINK_MODE === 'inward' || DEEP_LINK_MODE === 'outward') ? DEEP_LINK_MODE : null;
+   QA 報告第八輪 S-4：這段解析邏輯以前放在 Viewer.html 的一段 inline <script>，由它讀出
+   DEEP_LINK_WHEEL_ID／DEEP_LINK_MODE 兩個全域變數再交給這裡用——但 inline <script> 一天
+   存在，CSP 的 script-src 就得放行 'unsafe-inline'，等於整條 CSP 政策形同虛設。S-4 把解析
+   邏輯直接搬進這支檔案自己做，Viewer.html 從此不再需要任何 inline <script>。
+
+   兩層來源：
+   1. 優先讀 <body> 上的 data-deep-link-wheel／data-deep-link-mode 屬性——這是 Apps Script
+      那份退路（doGet() 的 Viewer 分支）唯一能把伺服器端解析出來的值交給前端的方式：那個
+      頁面被 Google 包在沙盒 iframe 裡，window.location.search 永遠是空字串（原因見 Code.gs
+      的 doGet() 完整說明），屬性值不是 <script>，不受 CSP script-src 限制，維持這條退路的
+      深層連結不因為這次改動壞掉。
+   2. 屬性不存在或是空字串時（GitHub Pages 的靜態版就是這種情況——build_deploy.py 沒有
+      樣板引擎可以印出真正的值，一律留空；一般直接開啟這個頁面、body 上沒有這兩個屬性時
+      也一樣），退回直接讀 location.search，跟本機版做法一致。
+
+   字元白名單、mode 只認兩個已知值——這兩條清洗規則不管值是從哪一層來的都要套用到底，
+   跟 Code.gs 的 readParam_() 那條路徑「只放寬參數名稱，值的清洗不放寬」是同一個原則。 */
+const _deepLinkSearchParams_ = new URLSearchParams(location.search);
+const _rawDeepLinkWheel_ = document.body.getAttribute('data-deep-link-wheel') || _deepLinkSearchParams_.get('wheel') || '';
+const _rawDeepLinkMode_ = document.body.getAttribute('data-deep-link-mode') || _deepLinkSearchParams_.get('mode') || '';
+const deepLinkWheelId = _rawDeepLinkWheel_.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || null;
+const deepLinkMode = (_rawDeepLinkMode_ === 'inward' || _rawDeepLinkMode_ === 'outward') ? _rawDeepLinkMode_ : null;
 let deepLinkModeApplied = false;
 let deepLinkFailed = false;           // 連結指名的輪找不到／已停用
 let deepLinkFailedNotified = false;   // 只提示一次

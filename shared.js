@@ -159,7 +159,12 @@ const FONTS = [
     // Pinned to v1.1's commit hash rather than the "@1.1" tag alias — tags can technically be moved
     // by the repo owner (unlike a commit hash), so this is the most immutable form of pinning short
     // of self-hosting the file.
-    url: 'https://cdn.jsdelivr.net/gh/marsnow/open-huninn-font@1f7c596821d7e76b0c84cab625a0eba06a3a12a8/font/jf-openhuninn.woff', format: 'woff' },
+    // QA 報告第九輪 S-8：.woff 換成 .woff2（同一個 pin 死的 commit 下確實存在，HTTP 200）——
+    // 兩者是同一套字體的不同壓縮包裝（woff 用 zlib、woff2 用 Brotli），解開後渲染結果完全
+    // 相同，woff2 實際傳輸大小約省 1MB（3.9MB→2.9MB，-26%）。每一個開啟情緒輪的案主都要
+    // 下載這個檔案，這個單位是諮商所、案主是不特定多數（含長輩、可能在行動網路），省下來
+    // 有實質意義。CSP 的 font-src 已經涵蓋 cdn.jsdelivr.net，不需要跟著改。
+    url: 'https://cdn.jsdelivr.net/gh/marsnow/open-huninn-font@1f7c596821d7e76b0c84cab625a0eba06a3a12a8/font/jf-openhuninn.woff2', format: 'woff2' },
 ];
 
 
