@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>今天，你的心情是？</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;
+       align-items:center;justify-content:center;gap:24px;padding:32px 20px;
+       font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;
+       background:#F3E7D3;color:#4A3626;text-align:center;}
+  h1{font-size:20px;margin:0;font-weight:700;}
+  p{margin:0;font-size:15px;color:#8C7660;line-height:1.7;}
+  a.go{display:inline-block;padding:16px 36px;border-radius:999px;
+       background:#C98A4B;color:#fff;text-decoration:none;
+       font-size:18px;font-weight:700;box-shadow:0 6px 16px rgba(0,0,0,.15);}
+</style>
+</head>
+<body>
+  <h1>今天，你的心情是？</h1>
+  <p>如果畫面沒有自動開啟，<br>請按下面的按鈕。</p>
+  <a class="go" id="go" href="#">打開我的情緒輪</a>
+
+<script>
+  var EXEC = 'https://script.google.com/macros/s/AKfycbwJ1vFHHmoBKRBQ4daiUWoZz_A4IZ63m52KPbpRNwwU50onLxlN_QTvcQZMkuW_jMQ/exec';
+
+  var p = new URLSearchParams(location.search);
+  var wheel = (p.get('wheel') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  var mode  = (p.get('mode') === 'inward' || p.get('mode') === 'outward') ? p.get('mode') : '';
+
+  var target = EXEC;
+  if (wheel) target += '?wheel=' + encodeURIComponent(wheel);
+  if (mode)  target += (target.indexOf('?') === -1 ? '?' : '&') + 'mode=' + encodeURIComponent(mode);
+
+  document.getElementById('go').href = target;
+  location.replace(target);
+</script>
+</body>
+</html>
