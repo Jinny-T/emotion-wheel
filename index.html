@@ -1,26 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>API 測試</title>
-<style>body{font-family:system-ui,sans-serif;padding:20px;font-size:14px;}
-pre{white-space:pre-wrap;word-break:break-all;background:#f5f5f5;padding:12px;border-radius:8px;}</style>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>互動情緒輪</title>
+<link rel="stylesheet" href="viewer.css?v=20260904">
 </head>
-<body>
-<h2 id="s">測試中…</h2>
-<pre id="out"></pre>
+<body class="is-loading">
+
+<div class="layout">
+  <div>
+    <h1 id="pageTitle">今天，你的心情是？</h1>
+    <p class="sub" id="pageSubtitle">每一種心情，都值得被好好看見。</p>
+  </div>
+
+  <div id="wheelSwitcherRow" style="display:none;"></div>
+
+  <div class="wheel-panel">
+    <div id="modeSwitcherRow" style="display:none;"></div>
+    <div class="wheel-header">
+      <div class="breadcrumb" id="breadcrumb">載入中…</div>
+      <button class="back-btn" id="backBtn">← 收合</button>
+    </div>
+    <div id="collectLevelRow" style="display:none;">
+      <button class="btn collect-level-btn" type="button" id="collectLevelBtn"></button>
+    </div>
+    <div class="stage">
+      <div class="wheel-wrap" id="wheelWrap">
+        <svg id="wheelSvg" viewBox="0 0 840 840"></svg>
+        <div id="bubbleLayer"></div>
+      </div>
+    </div>
+    <div class="hint" id="hint">正在載入情緒輪資料…</div>
+    <div id="outwardActions" style="display:none;"></div>
+  </div>
+
+  <div class="selected-panel">
+    <div class="selected-title">今天收集的心情</div>
+    <div class="selected-tags" id="selectedTags"></div>
+    <div class="custom-tag-row">
+      <input type="color" id="customTagColor" value="#4A3626" title="選顏色">
+      <input type="text" id="customTagInput" placeholder="打自己的心情…" maxlength="60">
+      <button class="btn" type="button" id="customTagAddBtn">＋ 加入</button>
+    </div>
+  </div>
+
+  <div class="selected-panel" id="generatePanel" style="display:none;">
+    <div class="selected-title">產生我的情緒雲</div>
+    <div class="template-picker" id="templatePicker"></div>
+    <label class="color-mode-row">
+      <input type="checkbox" id="singleColorToggle">
+      <span>套用單一字體顏色</span>
+      <input type="color" id="singleColorInput" value="#4A3626" style="display:none;">
+    </label>
+    <div style="display:flex; justify-content:center;">
+      <button class="btn" id="generateBtn">📥 下載我的情緒雲</button>
+    </div>
+  </div>
+  <div id="pageFooter" class="page-footer"></div>
+</div>
+
 <script>
-var EXEC='https://script.google.com/macros/s/AKfycbwJ1vFHHmoBKRBQ4daiUWoZz_A4IZ63m52KPbpRNwwU50onLxlN_QTvcQZMkuW_jMQ/exec';
-fetch(EXEC+'?api=published')
-  .then(function(r){ return r.text(); })
-  .then(function(t){
-    var d=JSON.parse(t);
-    document.getElementById('s').textContent='✅ 成功！拿到 '+(d.wheels?d.wheels.length:0)+' 個情緒輪';
-    document.getElementById('out').textContent=(d.wheels||[]).map(function(w){return w.id+' — '+w.name;}).join('\n');
-  })
-  .catch(function(e){
-    document.getElementById('s').textContent='❌ 失敗：'+e.message;
-    document.getElementById('out').textContent=e.stack||'';
-  });
+/* 第五輪之後，這裡是純靜態頁，直接讀 location.search 就能拿到處方連結（?wheel=…
+   &mode=…）的參數——不再需要靠伺服器端樣板轉手：Apps Script 沙盒 iframe 裡
+   window.location.search 永遠是空字串這個限制，只存在於本檔案繼續保留、當退路用的
+   Apps Script 樣板版本（doGet() 的 Viewer 分支），不影響這份靜態版。
+   字元白名單與 mode 只認兩個已知值這兩條清洗規則維持跟 Apps Script 版一樣嚴格
+   （對照 Code.gs 的 readParam_() 那條路徑：只放寬參數名稱，值的清洗不放寬）。 */
+var _deepLinkParams_ = new URLSearchParams(location.search);
+var DEEP_LINK_WHEEL_ID = (_deepLinkParams_.get('wheel') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+var DEEP_LINK_MODE = (_deepLinkParams_.get('mode') === 'inward' || _deepLinkParams_.get('mode') === 'outward')
+  ? _deepLinkParams_.get('mode') : '';
 </script>
+<script src="shared.js?v=20260904"></script>
+<script src="viewer.js?v=20260904"></script>
 </body>
 </html>
